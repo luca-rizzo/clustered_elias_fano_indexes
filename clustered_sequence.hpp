@@ -10,7 +10,7 @@
 
 namespace ds2i
 {
-    template <typename BaseSequence = partitioned_sequence<>>
+    template <typename BaseSequence = compact_elias_fano>
     struct clustered_sequence
     {
         typedef BaseSequence base_sequence_type;

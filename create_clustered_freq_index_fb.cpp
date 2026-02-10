@@ -23,90 +23,189 @@
 
 using ds2i::logger;
 
-struct cluster_data {
+struct cluster_data
+{
     sequence_t reference;
     std::vector<sequence_t> partitions;
 };
 
-cluster_data
-reference_selection(ds2i::clustered_binary_freq_collection const& input,
-                    uint32_t cluster_size,
-                    uint32_t MAX_REF_SIZE)
+
+cluster_data reference_selection(ds2i::clustered_binary_freq_collection const &input,
+
+                        uint32_t cluster_size,
+
+                        uint32_t MAX_REF_SIZE)
+
 {
+
+    using pair = std::pair<posting_t, uint32_t>;
+
     std::unordered_map<posting_t, uint32_t> occs;
+
     auto occs_cend = occs.cend();
+
     ds2i::global_parameters params;
+
     std::vector<sequence_t> partitions;
+
     partitions.reserve(cluster_size);
 
     int elias_fano_type =
+
         ds2i::indexed_sequence::index_type::elias_fano;
+
     uint64_t universe = input.num_docs();
 
-    for (const auto& plist : input) {
+    uint64_t total_postings = 0;
 
-        auto const& docs = plist.docs;
+    uint64_t n_list = 0;
+
+    // ===============================
+
+    // Scan cluster posting lists
+
+    // ===============================
+
+    for (const auto &plist : input)
+
+    {
+
+        auto const &docs = plist.docs;
+
+        n_list++;
+
         auto partition =
-            ds2i::partitioned_sequence<>::compute_partition(docs.begin(),
-                                                            universe,
-                                                            docs.size(),
-                                                            params);
-        for (uint32_t i = 0; i < partition.size(); ++i) {
-            auto const& v = ds2i::get_block_info(i, docs, partition);
+
+            ds2i::partitioned_sequence<>::compute_partition(
+
+                docs.begin(),
+
+                universe,
+
+                docs.size(),
+
+                params);
+
+        for (uint32_t i = 0; i < partition.size(); ++i)
+
+        {
+
+            auto const &v = ds2i::get_block_info(i, docs, partition);
+
             uint32_t lo = v.lo, hi = v.hi, n = v.n, u = v.u;
+
             int block_best_type =
+
                 ds2i::indexed_sequence::best_type(params, u, n);
+
             if (block_best_type == elias_fano_type)
+
             {
+
                 for (uint32_t k = lo; k < hi; ++k)
+
                 {
-                    auto doc_id = docs[k];
-                    if (occs.find(doc_id) != occs_cend) {
-                        occs[doc_id] += 1;
-                    } else {
+
+                    posting_t doc_id = docs[k];
+
+                    total_postings++;
+
+                    auto it = occs.find(doc_id);
+
+                    if (it != occs_cend)
+
+                        ++it->second;
+
+                    else
+
                         occs.emplace(doc_id, 1);
-                    }
                 }
             }
         }
+
         partitions.push_back(std::move(partition));
     }
 
-    uint64_t ref_size = std::min(uint64_t(MAX_REF_SIZE), occs.size());
+    // ===============================
 
-    typedef std::pair<posting_t, uint32_t> pair;
+    // Build candidate list
+
+    // ===============================
+
+    uint32_t MIN_FREQ = n_list >= 2 ? 2 : 1; // soglia minima
+
     std::vector<pair> pairs;
+
     pairs.reserve(occs.size());
 
-    for (auto const& p: occs) {
-        pairs.emplace_back(p.first, p.second);
+    for (auto const &p : occs)
+
+    {
+
+        if (p.second >= MIN_FREQ)
+
+            pairs.emplace_back(p.first, p.second);
     }
+
+    // ===============================
+
+    // Sort by decreasing frequency
+
+    // ===============================
 
     std::sort(pairs.begin(), pairs.end(),
-        [&](pair const& p1,
-            pair const& p2) {
-            return p1.second > p2.second;
-        });
+
+              [](pair const &a, pair const &b)
+
+              {
+                  return a.second > b.second;
+              });
+
+    // ===============================
+
+    // Select reference
+
+    // ===============================
+
+    uint64_t ref_size =
+
+        std::min<uint64_t>(MAX_REF_SIZE, pairs.size());
 
     sequence_t ref;
+
     ref.reserve(ref_size);
-    for (uint32_t i = 0; i < ref_size; ++i) {
+
+    for (uint32_t i = 0; i < ref_size; ++i)
+
         ref.push_back(pairs[i].first);
-    }
+
     std::sort(ref.begin(), ref.end());
 
     std::cout << "reference length: " << ref.size() << std::endl;
 
     return {
+
         std::move(ref),
-        std::move(partitions)
-    };
+
+        std::move(partitions)};
 }
 
-void create_clustered_collection(ds2i::clustered_binary_freq_collection& input,
-                                 ds2i::global_parameters const& params,
-                                 const char* cluster_filename,
-                                 const char* output_filename,
+void print_reference(sequence_t const &reference,
+                     std::ofstream &ref_file)
+{
+
+    ref_file << reference.size();
+    for (auto const &doc_id : reference)
+    {
+        ref_file << " " << doc_id;
+    }
+    ref_file << "\n";
+}
+
+void create_clustered_collection(ds2i::clustered_binary_freq_collection &input,
+                                 ds2i::global_parameters const &params,
+                                 const char *cluster_filename,
+                                 const char *output_filename,
                                  bool check,
                                  uint32_t MAX_REF_SIZE)
 {
@@ -128,6 +227,9 @@ void create_clustered_collection(ds2i::clustered_binary_freq_collection& input,
     uint32_t c = 1;
     std::vector<pos_t> docs_positions;
     std::vector<pos_t> freqs_positions;
+    std::string ref_filename = std::string(cluster_filename) + ".refs";
+    std::ofstream ref_file(ref_filename,
+                           std::ios_base::out | std::ios_base::trunc);
     while (std::getline(instream, line))
     {
         std::vector<std::string> data;
@@ -139,26 +241,26 @@ void create_clustered_collection(ds2i::clustered_binary_freq_collection& input,
         freqs_positions.reserve(cluster_size);
 
         std::for_each(++data.begin(), data.end(),
-        [&docs_positions, &freqs_positions](std::string const& s)
-        {
-            pos_t p = std::stoull(s.data());
-            docs_positions.push_back(p);
-            freqs_positions.push_back(p - 2);
-        });
+                      [&docs_positions, &freqs_positions](std::string const &s)
+                      {
+                          pos_t p = std::stoull(s.data());
+                          docs_positions.push_back(p);
+                          freqs_positions.push_back(p - 2);
+                      });
 
         input.add_positions(docs_positions, freqs_positions);
         input.set_positions();
 
-        auto const& cluster_data =
+        auto const &cluster_data =
             reference_selection(input, cluster_size, MAX_REF_SIZE);
 
-        auto const& reference = cluster_data.reference;
-        auto const& partitions = cluster_data.partitions;
-
+        auto const &reference = cluster_data.reference;
+        auto const &partitions = cluster_data.partitions;
+        print_reference(reference, ref_file);
         builder.add_reference(reference.size(), reference.begin());
 
         uint32_t i = 0;
-        for (auto const& plist : input)
+        for (auto const &plist : input)
         {
             uint64_t freqs_sum = std::accumulate(plist.freqs.begin(),
                                                  plist.freqs.end(),
@@ -169,14 +271,13 @@ void create_clustered_collection(ds2i::clustered_binary_freq_collection& input,
                                      partitions[i++]);
             plog.done_sequence(plist.docs.size());
         }
-
         logger() << "cluster-" << c++ << " encoded:\n";
         builder.print_cluster_stat();
 
         docs_positions.clear();
         freqs_positions.clear();
     }
-
+    ref_file.close();
     file.close();
     plog.log();
     clustered_opt_index coll;
@@ -186,45 +287,45 @@ void create_clustered_collection(ds2i::clustered_binary_freq_collection& input,
     logger() << "clustered_opt collection built in "
              << elapsed_secs << " seconds" << std::endl;
 
-    stats_line()
-        ("type", "clustered_opt")
-        ("worker_threads", configuration::get().worker_threads)
-        ("construction_time", elapsed_secs)
-        ("construction_user_time", user_elapsed_secs)
-        ;
+    stats_line()("type", "clustered_opt")("worker_threads", configuration::get().worker_threads)("construction_time", elapsed_secs)("construction_user_time", user_elapsed_secs);
 
     dump_stats(coll, "clustered_opt", plog.postings);
 
-    if (output_filename) {
+    if (output_filename)
+    {
         succinct::mapper::freeze(coll, output_filename);
-        if (check) {
+        if (check)
+        {
             verify_clustered_collection(input, output_filename);
         }
     }
 }
 
-int main(int argc, const char** argv)
+int main(int argc, const char **argv)
 {
     using namespace ds2i;
 
-    if (argc < 4) {
+    if (argc < 4)
+    {
         std::cerr << "Usage: " << argv[0]
                   << " <collection basename> <cluster filename> <MAX_REF_SIZE> [<output filename>] [--check]"
                   << std::endl;
         return 1;
     }
 
-    const char* input_basename = argv[1];
-    const char* cluster_filename = argv[2];
+    const char *input_basename = argv[1];
+    const char *cluster_filename = argv[2];
     const uint32_t MAX_REF_SIZE = std::atoi(argv[3]);
 
-    const char* output_filename = nullptr;
-    if (argc > 4) {
+    const char *output_filename = nullptr;
+    if (argc > 4)
+    {
         output_filename = argv[4];
     }
 
     bool check = false;
-    if (argc > 5 && std::string(argv[5]) == "--check") {
+    if (argc > 5 && std::string(argv[5]) == "--check")
+    {
         check = true;
     }
 
@@ -234,8 +335,7 @@ int main(int argc, const char** argv)
 
     create_clustered_collection(
         input, params, cluster_filename,
-        output_filename, check, MAX_REF_SIZE
-    );
+        output_filename, check, MAX_REF_SIZE);
 
     return 0;
 }

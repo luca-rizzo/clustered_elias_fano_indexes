@@ -7,7 +7,7 @@
 namespace ds2i
 {
     struct cluster {
-        typedef uint16_t index_t;
+        typedef uint32_t index_t;
 
         cluster(std::vector<plist_t> const& plists,
                 std::vector<double> const& itfs)

@@ -207,6 +207,7 @@ void create_clustered_collection(ds2i::clustered_binary_freq_collection &input,
                                  const char *cluster_filename,
                                  const char *output_filename,
                                  bool check,
+                                 const char *paper_output_filename,
                                  uint32_t MAX_REF_SIZE)
 {
     using namespace ds2i;
@@ -299,6 +300,12 @@ void create_clustered_collection(ds2i::clustered_binary_freq_collection &input,
             verify_clustered_collection(input, output_filename);
         }
     }
+
+    if (paper_output_filename)
+    {
+        logger() << "Exporting paper-layout index to " << paper_output_filename << std::endl;
+        coll.export_paper_layout(paper_output_filename);
+    }
 }
 
 int main(int argc, const char **argv)
@@ -308,7 +315,7 @@ int main(int argc, const char **argv)
     if (argc < 4)
     {
         std::cerr << "Usage: " << argv[0]
-                  << " <collection basename> <cluster filename> <MAX_REF_SIZE> [<output filename>] [--check]"
+                  << " <collection basename> <cluster filename> <MAX_REF_SIZE> [<output filename>] [--check] [--paper-output <file>]"
                   << std::endl;
         return 1;
     }
@@ -318,15 +325,34 @@ int main(int argc, const char **argv)
     const uint32_t MAX_REF_SIZE = std::atoi(argv[3]);
 
     const char *output_filename = nullptr;
+    const char *paper_output_filename = nullptr;
     if (argc > 4)
     {
         output_filename = argv[4];
     }
 
     bool check = false;
-    if (argc > 5 && std::string(argv[5]) == "--check")
+    for (int i = 5; i < argc; ++i)
     {
-        check = true;
+        std::string arg = argv[i];
+        if (arg == "--check")
+        {
+            check = true;
+        }
+        else if (arg == "--paper-output")
+        {
+            if (i + 1 >= argc)
+            {
+                std::cerr << "Missing value after --paper-output" << std::endl;
+                return 1;
+            }
+            paper_output_filename = argv[++i];
+        }
+        else
+        {
+            std::cerr << "Unknown argument: " << arg << std::endl;
+            return 1;
+        }
     }
 
     clustered_binary_freq_collection input(input_basename, check);
@@ -335,7 +361,7 @@ int main(int argc, const char **argv)
 
     create_clustered_collection(
         input, params, cluster_filename,
-        output_filename, check, MAX_REF_SIZE);
+        output_filename, check, paper_output_filename, MAX_REF_SIZE);
 
     return 0;
 }

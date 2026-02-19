@@ -9,6 +9,8 @@
 #include "util.hpp"
 
 #include <unordered_set>
+#include <fstream>
+#include <stdexcept>
 
 namespace ds2i
 {
@@ -280,6 +282,75 @@ namespace ds2i
         global_parameters const& params() const
         {
             return m_params;
+        }
+
+        void export_paper_layout(const char* output_filename) const
+        {
+            if (!output_filename) {
+                throw std::invalid_argument("output filename must not be null");
+            }
+
+            std::ofstream out(output_filename, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                throw std::runtime_error("cannot open paper-layout output file");
+            }
+
+            auto write_u8 = [&](uint8_t value) {
+                out.write(reinterpret_cast<const char*>(&value), sizeof(value));
+            };
+
+            auto write_u32 = [&](uint32_t value) {
+                out.write(reinterpret_cast<const char*>(&value), sizeof(value));
+            };
+
+            auto write_u64 = [&](uint64_t value) {
+                out.write(reinterpret_cast<const char*>(&value), sizeof(value));
+            };
+
+            auto write_bitvector_words = [&](succinct::bit_vector const& bv) {
+                uint64_t bit_size = bv.size();
+                uint64_t words = (bit_size + 63) / 64;
+                write_u64(bit_size);
+                write_u64(words);
+                for (uint64_t w = 0; w < words; ++w) {
+                    uint64_t word = bv.get_word(w * 64);
+                    write_u64(word);
+                }
+            };
+
+            auto write_stream_section = [&](bitvector_collection const& stream) {
+                write_u64(stream.endpoints_count());
+                write_u64(stream.endpoints_universe());
+                write_bitvector_words(stream.endpoints_bits());
+                write_bitvector_words(stream.bits());
+            };
+
+            static const char magic[8] = {'C', 'E', 'F', 'P', 'A', 'P', 'R', '1'};
+            out.write(magic, sizeof(magic));
+
+            write_u32(2); // format version (v2: endpoints-first stream layout)
+            write_u8(1);  // little-endian marker
+            write_u8(m_params.ef_log_sampling0);
+            write_u8(m_params.ef_log_sampling1);
+            write_u8(m_params.rb_log_rank1_sampling);
+            write_u8(m_params.rb_log_sampling1);
+            write_u8(m_params.log_partition_size);
+            write_u8(0);
+            write_u8(0);
+
+            write_u64(m_num_docs);
+            write_u64(size());
+            write_u64(clusters());
+
+            // Three aligned streams in paper order: documents, frequencies, references.
+            write_stream_section(m_docs_sequences);
+            write_stream_section(m_freqs_sequences);
+            write_stream_section(m_refs_sequences);
+
+            out.flush();
+            if (!out) {
+                throw std::runtime_error("failed while writing paper-layout file");
+            }
         }
 
         void swap(clustered_freq_index& other)

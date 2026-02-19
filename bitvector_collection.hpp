@@ -63,6 +63,21 @@ namespace ds2i
             return m_bitvectors;
         }
 
+        succinct::bit_vector const& endpoints_bits() const
+        {
+            return m_endpoints;
+        }
+
+        uint64_t endpoints_count() const
+        {
+            return m_size;
+        }
+
+        uint64_t endpoints_universe() const
+        {
+            return m_bitvectors.size();
+        }
+
         succinct::bit_vector::enumerator
         get(global_parameters const& params, size_t i) const
         {

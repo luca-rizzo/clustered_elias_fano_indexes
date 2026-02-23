@@ -283,10 +283,17 @@ int main(int argc, char **argv)
                   << "\t[num. of trials in seed selection, e.g., 5]\n"
                   << "\t[cut-off threshold in seed selection, e.g., 5]\n"
                   << "\t[divisor of universe to define max. reference size, e.g., 8]\n"
-                  << "\t[max. number of k-means iterations, e.g., 10]"
+                  << "\t[max. number of k-means iterations, e.g., 10]\n"
+                  << "\t[optional output id type: offset|index (default: offset)]"
                   << std::endl;
         return 1;
     }
+
+    enum class output_id_kind
+    {
+        offset,
+        index
+    };
 
     const char *bin_coll_fn = argv[1];
     const char *positions_fn = argv[2];
@@ -298,8 +305,35 @@ int main(int argc, char **argv)
     uint32_t DIV = std::atoi(argv[8]);
     uint32_t MAX_ITER = std::atoi(argv[9]);
 
+    output_id_kind output_kind = output_id_kind::offset;
+    if (argc >= 11)
+    {
+        std::string output_kind_arg = argv[10];
+        if (output_kind_arg == "offset")
+        {
+            output_kind = output_id_kind::offset;
+        }
+        else if (output_kind_arg == "index")
+        {
+            output_kind = output_id_kind::index;
+        }
+        else
+        {
+            std::cerr << "Invalid output id type '" << output_kind_arg
+                      << "'. Use 'offset' or 'index'." << std::endl;
+            return 1;
+        }
+    }
+
     auto plists_positions =
         read_plists_positions(positions_fn, num_lists);
+
+    std::unordered_map<pos_t, uint32_t> offset_to_original_index;
+    offset_to_original_index.reserve(plists_positions.size());
+    for (uint32_t i = 0; i < plists_positions.size(); ++i)
+    {
+        offset_to_original_index.emplace(plists_positions[i], i);
+    }
 
     std::vector<double> itfs(U, 0.0);
 
@@ -498,7 +532,21 @@ int main(int argc, char **argv)
             uint32_t k = 0;
             for (auto i : plists_indexes)
             {
-                std::cout << plists[i].first;
+                if (output_kind == output_id_kind::offset)
+                {
+                    std::cout << plists[i].first;
+                }
+                else
+                {
+                    auto it = offset_to_original_index.find(plists[i].first);
+                    if (it == offset_to_original_index.end())
+                    {
+                        std::cerr << "Cannot map offset " << plists[i].first
+                                  << " to original list index." << std::endl;
+                        return 1;
+                    }
+                    std::cout << it->second;
+                }
                 if (++k != cluster_size)
                     std::cout << " ";
             }
@@ -513,7 +561,21 @@ int main(int argc, char **argv)
         uint32_t k = 0;
         for (auto i : outliers)
         {
-            std::cout << plists[i].first;
+            if (output_kind == output_id_kind::offset)
+            {
+                std::cout << plists[i].first;
+            }
+            else
+            {
+                auto it = offset_to_original_index.find(plists[i].first);
+                if (it == offset_to_original_index.end())
+                {
+                    std::cerr << "Cannot map offset " << plists[i].first
+                              << " to original list index." << std::endl;
+                    return 1;
+                }
+                std::cout << it->second;
+            }
             if (++k != outliers_size)
                 std::cout << " ";
         }

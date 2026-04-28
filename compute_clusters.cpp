@@ -66,37 +66,19 @@ preprocess_collection(const char *bin_coll_fn,
     ds2i::global_parameters params;
     input.set_positions(plists_positions);
 
-    int elias_fano_type =
-        ds2i::indexed_sequence::index_type::elias_fano;
-
     uint32_t i = 0;
     for (auto const &list : input)
     {
-        auto partition =
-            ds2i::partitioned_sequence<>::compute_partition(list.begin(),
-                                                            universe,
-                                                            list.size(),
-                                                            params);
         sequence_t pruned_list;
-        pruned_list.reserve(list.size()); // actual size will be less than this
-        for (uint32_t i = 0; i < partition.size(); ++i)
+        pruned_list.reserve(list.size());
+        for (size_t k = 0; k < list.size(); ++k)
         {
-            auto const &v = get_block_info(i, list, partition);
-            uint32_t lo = v.lo, hi = v.hi, n = v.n, u = v.u;
-            int block_best_type =
-                ds2i::indexed_sequence::best_type(params, u, n);
-            if (block_best_type == elias_fano_type)
-            {
-                for (uint32_t k = lo; k < hi; ++k)
-                {
-                    auto doc_id = list[k];
-                    pruned_list.push_back(doc_id);
-                    if (itfs[doc_id])
-                        itfs[doc_id] += 1.0;
-                    else
-                        itfs[doc_id] = 1.0;
-                }
-            }
+            auto doc_id = list[k];
+            pruned_list.push_back(doc_id);
+            if (itfs[doc_id])
+                itfs[doc_id] += 1.0;
+            else
+                itfs[doc_id] = 1.0;
         }
 
         pruned_list.shrink_to_fit();
